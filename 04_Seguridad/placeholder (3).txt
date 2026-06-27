@@ -1,0 +1,64 @@
+/*
+    Equipo #4 - Seguridad
+    Script 03: vistas para acceso controlado
+
+    Las vistas exponen solo las columnas necesarias y ocultan datos
+    sensibles como cedula, direccion y datos salariales.
+*/
+
+USE SolucionesEmpresarialesRD;
+GO
+
+IF SCHEMA_ID(N'seguridad') IS NULL
+    EXEC(N'CREATE SCHEMA [seguridad] AUTHORIZATION [dbo];');
+GO
+
+CREATE OR ALTER VIEW [seguridad].[vw_ClientesContacto]
+AS
+    SELECT
+        C.ClienteID,
+        CONCAT(C.Nombre, N' ', C.Apellido) AS NombreCompleto,
+        C.Telefono,
+        C.Correo
+    FROM dbo.Clientes AS C;
+GO
+
+CREATE OR ALTER VIEW [seguridad].[vw_EmpleadosDirectorio]
+AS
+    SELECT
+        E.EmpleadoID,
+        CONCAT(E.Nombre, N' ', E.Apellido) AS NombreCompleto
+    FROM dbo.Empleados AS E;
+GO
+
+CREATE OR ALTER VIEW [seguridad].[vw_VentasResumen]
+AS
+    SELECT
+        V.VentaID,
+        V.FechaVenta,
+        V.Total,
+        V.Estado
+    FROM dbo.Ventas AS V;
+GO
+
+CREATE OR ALTER VIEW [seguridad].[vw_InventarioConsulta]
+AS
+    SELECT
+        I.ProductoID,
+        I.NombreProducto,
+        I.NombreCategoria,
+        I.Precio,
+        I.Stock,
+        I.EstadoInventario
+    FROM dbo.vw_InventarioProductos AS I;
+GO
+
+CREATE OR ALTER VIEW [seguridad].[vw_ResumenVentasCliente]
+AS
+    SELECT
+        R.ClienteID,
+        R.Cliente,
+        R.CantidadVentas,
+        R.TotalComprado
+    FROM dbo.vw_ResumenVentasPorCliente AS R;
+GO
