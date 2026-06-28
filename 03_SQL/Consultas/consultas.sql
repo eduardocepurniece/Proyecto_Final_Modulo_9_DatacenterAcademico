@@ -2,11 +2,163 @@ USE SolucionesEmpresarialesRD;
 GO
 
 /* =========================================================
-   CONSULTAS MULTITABLAS
+   CREACIÓN DE TABLAS BASE
    Base de datos: SolucionesEmpresarialesRD
    ========================================================= */
 
--- Consulta 1: Ventas con cliente y empleado
+IF OBJECT_ID(N'dbo.Clientes', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Clientes (
+        ClienteID INT IDENTITY(1,1) PRIMARY KEY,
+        Nombre NVARCHAR(100) NOT NULL,
+        Apellido NVARCHAR(100) NOT NULL,
+        Cedula VARCHAR(20) NOT NULL UNIQUE,
+        Telefono VARCHAR(20),
+        Correo NVARCHAR(150) UNIQUE,
+        Direccion NVARCHAR(250),
+        FechaRegistro DATETIME DEFAULT GETDATE(),
+        Estado BIT DEFAULT 1
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Empleados', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Empleados (
+        EmpleadoID INT IDENTITY(1,1) PRIMARY KEY,
+        Nombre NVARCHAR(100) NOT NULL,
+        Apellido NVARCHAR(100) NOT NULL,
+        Cedula VARCHAR(20) NOT NULL UNIQUE,
+        Cargo NVARCHAR(100) NOT NULL,
+        Departamento NVARCHAR(100) NOT NULL,
+        Salario DECIMAL(12,2) NOT NULL CHECK (Salario > 0),
+        FechaIngreso DATE NOT NULL,
+        Estado BIT DEFAULT 1
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Categorias', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Categorias (
+        CategoriaID INT IDENTITY(1,1) PRIMARY KEY,
+        NombreCategoria NVARCHAR(100) NOT NULL UNIQUE,
+        Descripcion NVARCHAR(250)
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Productos', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Productos (
+        ProductoID INT IDENTITY(1,1) PRIMARY KEY,
+        NombreProducto NVARCHAR(150) NOT NULL,
+        CategoriaID INT NOT NULL,
+        Precio DECIMAL(12,2) NOT NULL CHECK (Precio > 0),
+        Stock INT NOT NULL CHECK (Stock >= 0),
+        Estado BIT DEFAULT 1,
+
+        CONSTRAINT FK_Productos_Categorias
+        FOREIGN KEY (CategoriaID) 
+        REFERENCES dbo.Categorias(CategoriaID)
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Servicios', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Servicios (
+        ServicioID INT IDENTITY(1,1) PRIMARY KEY,
+        NombreServicio NVARCHAR(150) NOT NULL,
+        Descripcion NVARCHAR(250),
+        Precio DECIMAL(12,2) NOT NULL CHECK (Precio > 0),
+        Estado BIT DEFAULT 1
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.Ventas', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Ventas (
+        VentaID INT IDENTITY(1,1) PRIMARY KEY,
+        ClienteID INT NOT NULL,
+        EmpleadoID INT NOT NULL,
+        FechaVenta DATETIME DEFAULT GETDATE(),
+        Total DECIMAL(12,2) DEFAULT 0 CHECK (Total >= 0),
+        Estado NVARCHAR(20) DEFAULT 'Completada',
+
+        CONSTRAINT FK_Ventas_Clientes
+        FOREIGN KEY (ClienteID) 
+        REFERENCES dbo.Clientes(ClienteID),
+
+        CONSTRAINT FK_Ventas_Empleados
+        FOREIGN KEY (EmpleadoID) 
+        REFERENCES dbo.Empleados(EmpleadoID),
+
+        CONSTRAINT CK_Ventas_Estado
+        CHECK (Estado IN ('Completada', 'Anulada', 'Pendiente'))
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.DetalleVentas', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.DetalleVentas (
+        DetalleID INT IDENTITY(1,1) PRIMARY KEY,
+        VentaID INT NOT NULL,
+        ProductoID INT NULL,
+        ServicioID INT NULL,
+        Cantidad INT NOT NULL CHECK (Cantidad > 0),
+        PrecioUnitario DECIMAL(12,2) NOT NULL CHECK (PrecioUnitario > 0),
+        Subtotal AS (Cantidad * PrecioUnitario) PERSISTED,
+
+        CONSTRAINT FK_DetalleVentas_Ventas
+        FOREIGN KEY (VentaID) 
+        REFERENCES dbo.Ventas(VentaID),
+
+        CONSTRAINT FK_DetalleVentas_Productos
+        FOREIGN KEY (ProductoID) 
+        REFERENCES dbo.Productos(ProductoID),
+
+        CONSTRAINT FK_DetalleVentas_Servicios
+        FOREIGN KEY (ServicioID) 
+        REFERENCES dbo.Servicios(ServicioID),
+
+        CONSTRAINT CK_DetalleVentas_ProductoOServicio
+        CHECK (
+            (ProductoID IS NOT NULL AND ServicioID IS NULL)
+            OR
+            (ProductoID IS NULL AND ServicioID IS NOT NULL)
+        )
+    );
+END;
+GO
+
+IF OBJECT_ID(N'dbo.InventarioMovimientos', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.InventarioMovimientos (
+        MovimientoID INT IDENTITY(1,1) PRIMARY KEY,
+        ProductoID INT NOT NULL,
+        TipoMovimiento NVARCHAR(20) NOT NULL,
+        Cantidad INT NOT NULL CHECK (Cantidad > 0),
+        FechaMovimiento DATETIME DEFAULT GETDATE(),
+        Descripcion NVARCHAR(250),
+
+        CONSTRAINT FK_InventarioMovimientos_Productos
+        FOREIGN KEY (ProductoID) 
+        REFERENCES dbo.Productos(ProductoID),
+
+        CONSTRAINT CK_Inventario_TipoMovimiento
+        CHECK (TipoMovimiento IN ('Entrada', 'Salida'))
+    );
+END;
+GO
+
+/* =========================================================
+   CONSULTAS MULTITABLAS Y SUBCONSULTAS
+   ========================================================= */
+
+-- Ventas con cliente y empleado
 SELECT 
     V.VentaID,
     C.Nombre + ' ' + C.Apellido AS Cliente,
@@ -14,217 +166,107 @@ SELECT
     V.FechaVenta,
     V.Total,
     V.Estado
-FROM Ventas V
-INNER JOIN Clientes C ON V.ClienteID = C.ClienteID
-INNER JOIN Empleados E ON V.EmpleadoID = E.EmpleadoID;
+FROM dbo.Ventas V
+INNER JOIN dbo.Clientes C ON V.ClienteID = C.ClienteID
+INNER JOIN dbo.Empleados E ON V.EmpleadoID = E.EmpleadoID;
 GO
 
-
--- Consulta 2: Detalle completo de cada venta
+-- Detalle completo de ventas
 SELECT 
     V.VentaID,
     C.Nombre + ' ' + C.Apellido AS Cliente,
-    ISNULL(P.NombreProducto, S.NombreServicio) AS ArticuloOServicio,
+    ISNULL(P.NombreProducto, S.NombreServicio) AS Concepto,
     DV.Cantidad,
     DV.PrecioUnitario,
     DV.Subtotal
-FROM DetalleVentas DV
-INNER JOIN Ventas V ON DV.VentaID = V.VentaID
-INNER JOIN Clientes C ON V.ClienteID = C.ClienteID
-LEFT JOIN Productos P ON DV.ProductoID = P.ProductoID
-LEFT JOIN Servicios S ON DV.ServicioID = S.ServicioID;
+FROM dbo.DetalleVentas DV
+INNER JOIN dbo.Ventas V ON DV.VentaID = V.VentaID
+INNER JOIN dbo.Clientes C ON V.ClienteID = C.ClienteID
+LEFT JOIN dbo.Productos P ON DV.ProductoID = P.ProductoID
+LEFT JOIN dbo.Servicios S ON DV.ServicioID = S.ServicioID;
 GO
 
-
--- Consulta 3: Productos con su categoría
+-- Productos con categoría
 SELECT 
     P.ProductoID,
     P.NombreProducto,
     C.NombreCategoria,
     P.Precio,
     P.Stock
-FROM Productos P
-INNER JOIN Categorias C ON P.CategoriaID = C.CategoriaID;
+FROM dbo.Productos P
+INNER JOIN dbo.Categorias C ON P.CategoriaID = C.CategoriaID;
 GO
 
-
--- Consulta 4: Ventas realizadas por cada empleado
+-- Ventas por empleado
 SELECT 
     E.EmpleadoID,
     E.Nombre + ' ' + E.Apellido AS Empleado,
     COUNT(V.VentaID) AS CantidadVentas,
     ISNULL(SUM(V.Total), 0) AS TotalVendido
-FROM Empleados E
-LEFT JOIN Ventas V ON E.EmpleadoID = V.EmpleadoID
+FROM dbo.Empleados E
+LEFT JOIN dbo.Ventas V ON E.EmpleadoID = V.EmpleadoID
 GROUP BY E.EmpleadoID, E.Nombre, E.Apellido;
 GO
 
-
--- Consulta 5: Clientes con total comprado
+-- Clientes con total comprado
 SELECT 
     C.ClienteID,
     C.Nombre + ' ' + C.Apellido AS Cliente,
     COUNT(V.VentaID) AS CantidadCompras,
     ISNULL(SUM(V.Total), 0) AS TotalComprado
-FROM Clientes C
-LEFT JOIN Ventas V ON C.ClienteID = V.ClienteID
+FROM dbo.Clientes C
+LEFT JOIN dbo.Ventas V ON C.ClienteID = V.ClienteID
 GROUP BY C.ClienteID, C.Nombre, C.Apellido;
 GO
 
-
-/* =========================================================
-   SUBCONSULTAS
-   ========================================================= */
-
--- Subconsulta 1: Clientes que han comprado más que el promedio de ventas
-SELECT 
-    C.ClienteID,
-    C.Nombre + ' ' + C.Apellido AS Cliente,
-    SUM(V.Total) AS TotalComprado
-FROM Clientes C
-INNER JOIN Ventas V ON C.ClienteID = V.ClienteID
-GROUP BY C.ClienteID, C.Nombre, C.Apellido
-HAVING SUM(V.Total) > (
-    SELECT AVG(Total)
-    FROM Ventas
-);
-GO
-
-
--- Subconsulta 2: Productos con precio mayor al promedio
+-- Productos con precio mayor al promedio
 SELECT 
     ProductoID,
     NombreProducto,
     Precio
-FROM Productos
+FROM dbo.Productos
 WHERE Precio > (
     SELECT AVG(Precio)
-    FROM Productos
+    FROM dbo.Productos
 );
 GO
 
-
--- Subconsulta 3: Empleados que han realizado ventas
+-- Empleados que han realizado ventas
 SELECT 
     EmpleadoID,
     Nombre,
     Apellido,
     Cargo
-FROM Empleados
+FROM dbo.Empleados
 WHERE EmpleadoID IN (
     SELECT DISTINCT EmpleadoID
-    FROM Ventas
+    FROM dbo.Ventas
 );
 GO
 
-
--- Subconsulta 4: Productos que nunca se han vendido
+-- Productos que nunca se han vendido
 SELECT 
     ProductoID,
     NombreProducto,
     Stock
-FROM Productos
+FROM dbo.Productos
 WHERE ProductoID NOT IN (
     SELECT ProductoID
-    FROM DetalleVentas
+    FROM dbo.DetalleVentas
     WHERE ProductoID IS NOT NULL
 );
 GO
 
-
--- Subconsulta 5: Venta de mayor monto
+-- Venta de mayor monto
 SELECT 
     VentaID,
     ClienteID,
     EmpleadoID,
     FechaVenta,
     Total
-FROM Ventas
+FROM dbo.Ventas
 WHERE Total = (
     SELECT MAX(Total)
-    FROM Ventas
+    FROM dbo.Ventas
 );
-GO
-
-
-/* =========================================================
-   REPORTES Y CONSULTAS DE VALIDACIÓN
-   ========================================================= */
-
--- Reporte de clientes activos
-SELECT 
-    ClienteID,
-    Nombre,
-    Apellido,
-    Cedula,
-    Telefono,
-    Correo,
-    Direccion,
-    FechaRegistro
-FROM Clientes
-WHERE Estado = 1;
-GO
-
-
--- Reporte de empleados activos
-SELECT 
-    EmpleadoID,
-    Nombre,
-    Apellido,
-    Cargo,
-    Departamento,
-    Salario,
-    FechaIngreso
-FROM Empleados
-WHERE Estado = 1;
-GO
-
-
--- Reporte de ventas detalladas
-SELECT 
-    V.VentaID,
-    V.FechaVenta,
-    C.Nombre + ' ' + C.Apellido AS Cliente,
-    E.Nombre + ' ' + E.Apellido AS Empleado,
-    ISNULL(P.NombreProducto, S.NombreServicio) AS Concepto,
-    DV.Cantidad,
-    DV.PrecioUnitario,
-    DV.Subtotal,
-    V.Total
-FROM Ventas V
-INNER JOIN Clientes C ON V.ClienteID = C.ClienteID
-INNER JOIN Empleados E ON V.EmpleadoID = E.EmpleadoID
-INNER JOIN DetalleVentas DV ON V.VentaID = DV.VentaID
-LEFT JOIN Productos P ON DV.ProductoID = P.ProductoID
-LEFT JOIN Servicios S ON DV.ServicioID = S.ServicioID
-ORDER BY V.VentaID;
-GO
-
-
--- Productos con stock bajo
-SELECT 
-    ProductoID,
-    NombreProducto,
-    Stock
-FROM Productos
-WHERE Stock <= 5;
-GO
-
-
--- Ventas completadas
-SELECT *
-FROM Ventas
-WHERE Estado = 'Completada';
-GO
-
-
--- Total vendido por mes
-SELECT 
-    YEAR(FechaVenta) AS Anio,
-    MONTH(FechaVenta) AS Mes,
-    SUM(Total) AS TotalVendido
-FROM Ventas
-WHERE Estado = 'Completada'
-GROUP BY YEAR(FechaVenta), MONTH(FechaVenta)
-ORDER BY Anio, Mes;
 GO
